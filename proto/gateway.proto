@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package gateway;
+
+enum CMD {
+  error_a = 10000; //错误
+  auth_r = 10001;  //认证
+  auth_a = 10002;
+  servers_r = 10003;	//服务器列表
+  servers_a = 10004;
+  login_r = 10005; //登录
+  login_a = 10006;
+  logout_r = 10007; //登出
+  logout_a = 10008;
+  create_r = 10009; //创建角色
+  create_a = 10010;
+  client_max = 19999;
+}
+
+message error_a {
+  uint32 cmd = 1;
+  uint32 code = 2;
+}
+
+message auth_r {
+  string account = 1;
+  string password = 2;
+}
+
+message auth_a {
+  uint32 code = 1;
+}
+
+message server {
+  uint32 id = 1;
+  string name = 2;
+  string opentime = 3;
+  string status = 4;
+}
+
+message servers_r {
+
+}
+
+message servers_a {
+  uint32 code = 1;
+  repeated server list = 2;
+}
+
+message login_r {
+  uint32 server_id = 1;
+}
+
+message login_a {
+  uint32 code = 1;
+  uint64 uid = 2;
+}
+
+message create_r {
+  uint32 server_id = 1;
+  string name = 2;
+}
+
+message create_a {
+  uint32 code = 1;
+  uint64 uid = 2;
+}
+
+////////////////
+

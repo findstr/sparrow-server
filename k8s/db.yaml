@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  annotations:
+   # Create endpoints also if the related pod isn't ready
+   service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  ports:
+  - port: 6666
+    name: client
+  clusterIP: None
+  selector:
+    app: db-node
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  serviceName: db
+  replicas: 4
+  selector:
+    matchLabels:
+      app: db-node
+  template:
+    metadata:
+      name: kvrocks
+      labels:
+        app: db-node
+    spec:
+      volumes:
+        - name: local-storage
+          persistentVolumeClaim:
+            claimName: pvc-db
+      initContainers:
+        - name: init-db
+          image: "registry.cn-shanghai.aliyuncs.com/findstr-mirror/etcd:latest"
+          env:
+          - name: CLUSTER_SIZE
+            value: "4"
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - name: local-storage
+              mountPath: /var/run/
+          command:
+          - "/bin/sh"
+          - "-exc"
+          - |
+             INDEX=${HOSTNAME##*-}
+             while true; do
+               etcdctl --endpoints=http://etcd-gateway.${POD_NAMESPACE}.svc.cluster.local:2379 put /service/db/capacity $CLUSTER_SIZE
+               if [ $? -eq 0 ]; then
+                 echo "db update pod success"
+                 break
+               fi
+             done
+             while true; do
+               echo "${INDEX}"
+               etcdctl --endpoints=http://etcd-gateway.${POD_NAMESPACE}.svc.cluster.local:2379 put /service/db/instance/${INDEX} ${HOSTNAME}.db.default.svc.cluster.local:6666
+               if [ $? -eq 0 ]; then
+                 echo "db update pod success"
+                 break
+               fi
+             done
+             mkdir -p /var/run/${HOSTNAME}/
+      containers:
+      - name: kvrocks
+        image: "registry.cn-shanghai.aliyuncs.com/findstr-mirror/kvrocks:latest"
+        ports:
+        - containerPort: 6666
+          name: client
+        volumeMounts:
+        - name: local-storage
+          mountPath: /var/run/
+        command:
+        - "/bin/sh"
+        - "-exc"
+        - |
+          kvrocks -c /var/lib/kvrocks/kvrocks.conf \
+            --dir "/var/run/${HOSTNAME}/kvrocks/"\
+            --pidfile "/var/run/${HOSTNAME}/kvrocks/kvrocks.pid"\
+            --bind "0.0.0.0"

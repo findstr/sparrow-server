@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dev-pod
+spec:
+  containers:
+  - name: dev-container
+    image: "registry.cn-shanghai.aliyuncs.com/findstr-mirror/ubuntu:latest"
+    volumeMounts:
+    - name: dev-volume
+      mountPath: /app
+    command:
+      - tail
+      - '-f'
+      - /dev/null
+  volumes:
+  - name: dev-volume
+    hostPath:
+      path: /mnt/local/server

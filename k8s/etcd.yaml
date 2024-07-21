@@ -1,0 +1,99 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-client
+spec:
+  ports:
+  - name: etcd-client
+    port: 2379
+    protocol: TCP
+    targetPort: 2379
+  selector:
+    app: etcd-member
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-gateway
+spec:
+  ports:
+  - port: 2379
+    name: client
+  selector:
+    app: etcd-member
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd
+  annotations:
+   # Create endpoints also if the related pod isn't ready
+   service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+spec:
+  ports:
+  - port: 2379
+    name: client
+  - port: 2380
+    name: peer
+  clusterIP: None
+  selector:
+    app: etcd-member
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: etcd
+  labels:
+    app: etcd
+spec:
+  serviceName: etcd
+  replicas: 3
+  selector:
+    matchLabels:
+      app: etcd-member
+  template:
+    metadata:
+      name: etcd
+      labels:
+        app: etcd-member
+    spec:
+      volumes:
+        - name: local-storage
+          persistentVolumeClaim:
+            claimName: pvc-etcd
+      containers:
+      - name: etcd
+        image: "registry.cn-shanghai.aliyuncs.com/findstr-mirror/etcd:latest"
+        ports:
+        - containerPort: 2379
+          name: client
+        - containerPort: 2389
+          name: peer
+        env:
+        - name: CLUSTER_SIZE
+          value: "3"
+        - name: SET_NAME
+          value: "etcd"
+        volumeMounts:
+        - name: local-storage
+          mountPath: /var/run/
+        command:
+        - "/bin/sh"
+        - "-exc"
+        - |
+           PEERS=""
+           for i in $(seq 0 $((${CLUSTER_SIZE} - 1)));
+           do
+             PEERS="${PEERS}${PEERS:+,}${SET_NAME}-${i}=http://${SET_NAME}-${i}.${SET_NAME}:2380"
+           done
+           exec etcd --name ${HOSTNAME} \
+             --listen-peer-urls http://0.0.0.0:2380 \
+             --listen-client-urls http://0.0.0.0:2379 \
+             --advertise-client-urls http://${HOSTNAME}.etcd:2379 \
+             --initial-advertise-peer-urls http://${HOSTNAME}.etcd:2380 \
+             --initial-cluster-token etcd-cluster-1 \
+             --initial-cluster ${PEERS} \
+             --initial-cluster-state new \
+             --data-dir /var/run/etcd/default.etcd/${HOSTNAME}
