@@ -85,8 +85,10 @@ end
 function router.create_r(uid, req, fd)
 	local sid = req.server_id
 	if not sid then
-		logger.error("[role] create_r no uid:", uid, "sid:", sid)
-		return
+		logger.error("[role] create_r uid:", uid, "no sid:", sid)
+		return {
+			code = code.args_invalid
+		}
 	end
 	local handle<close> = login_lock:lock(uid)
 	local user = uid_to_user[uid]
@@ -132,11 +134,12 @@ function router.create_r(uid, req, fd)
 			code = code.user_exist,
 		}
 	end
+	local name = req.name
 	local user = {
 		gate = fd,
 		base = {
 			uid = uid,
-			name = req.name,
+			name = name,
 			serverid = sid,
 		},
 	}
@@ -144,6 +147,7 @@ function router.create_r(uid, req, fd)
 	logger.info("[role] create_r uid:", uid, "name:", req.name, "sid:", sid, "ok")
 	return {
 		uid = uid,
+		name = name,
 	}
 end
 

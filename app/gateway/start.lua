@@ -158,12 +158,17 @@ end
 
 local function process(sock)
 	local dat, typ = sock:read()
-	if not dat then
+	print("process", dat, typ)
+	if not typ then
 		return false
 	end
 	if typ == "close" then
 		logger.info("[gateway] closed")
 		return false
+	end
+	if typ == "ping" then
+		sock:write("", "pong")
+		return true
 	end
 	if typ ~= "text" or #dat < 4 then
 		logger.error("[gateway] unknown type", typ)
@@ -198,6 +203,7 @@ local function process(sock)
 end
 
 local function handler(sock)
+	print("accept")
 	while true do
 		local ok, res = pcall(process, sock)
 		if not ok then

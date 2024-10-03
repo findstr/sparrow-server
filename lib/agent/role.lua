@@ -40,6 +40,7 @@ end
 
 local function event_addr(id, addr)
 	id_to_addr[id] = addr
+	logger.debug("[role] event addr id:", id, "addr:", addr)
 	if addr then
 		local fd = role.connect(addr)
 		if not fd then
@@ -51,13 +52,20 @@ local function event_addr(id, addr)
 			name = args.service,
 		})
 		if ack then
+			fd_to_id[fd] = id
 			id_to_fd[id] = fd
 			logger.info("[role] connect to id:", id, "addr:", addr, "success")
+		else
+			core.fork(function()
+				logger.error("[role] connect to id:", id, "addr:", addr, "fail, retry")
+				event_addr(id, addr)
+			end)
 		end
 	else
 		role.close(addr)
 		local fd = id_to_fd[id]
 		if fd then
+			fd_to_id[fd] = nil
 			id_to_fd[id] = nil
 		end
 	end
@@ -72,6 +80,7 @@ role = cluster.new {
 	end,
 	close = function(fd, errno)
 		local id = fd_to_id[fd]
+		logger.debug("close", id, fd, errno)
 		if not id then
 			return
 		end
@@ -125,8 +134,8 @@ local ack_cmd = setmetatable({}, {__index = function(t, k)
 end})
 
 function M.forward(uid, cmd, body)
-	print("-----------forward", uid, cmd)
 	local fd = uid_to_fd[uid]
+	print("-----------forward req", uid, cmd, fd)
 	if not fd then
 		return nil
 	end
@@ -135,6 +144,7 @@ function M.forward(uid, cmd, body)
 		cmd = cmd,
 		body = json.encode(body),
 	})
+	print("-----------forward ack", ack)
 	if not ack then
 		return nil
 	end

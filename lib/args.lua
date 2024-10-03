@@ -4,6 +4,7 @@ local assert = assert
 local serviceid = {
 	gateway = 1,
 	role = 2,
+	scene = 3,
 }
 
 local service = assert(env.get("service"), "service")

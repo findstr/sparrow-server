@@ -11,6 +11,7 @@ local function unmarshal(cmd, buf, sz)
 end
 
 local function marshal(cmd, body)
+	print("marshal", cmd, body)
 	cmd = clusterp:tag(cmd)
 	return cmd, clusterp:encode(cmd, body)
 end
@@ -34,12 +35,14 @@ end
 
 function crouter.forward_r(req, fd)
 	local cmd = req.cmd
+	local body = json.decode(req.body)
+	print("forward_r", cmd, req.body)
 	local fn = grouter[cmd]
 	if not fn then
 		logger.error("[role] forward_r uid:", req.uid, "cmd:", cmd, "not found")
 		return nil
 	end
-	local ack = fn(req.uid, req.body, fd)
+	local ack = fn(req.uid, body, fd)
 	if ack then
 		return {body = json.encode(ack)}
 	end

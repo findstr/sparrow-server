@@ -70,7 +70,7 @@ function M.start(etcd, lease_id)
 	local res, err = etcd:lock(lease_id, lock_prefix, uuid)
 	if not res then
 		logger.error("[lib.conf.workerid] lock fail:", err)
-		cleanup(1)
+		cleanup()
 	end
 	local service_prefix = "/service/" .. args.service .. "/instance"
 	local res, err = etcd:get {
@@ -79,7 +79,7 @@ function M.start(etcd, lease_id)
 	}
 	if not res then
 		logger.error("[lib.conf.workerid] etcd get service failed:", err)
-		cleanup(1)
+		cleanup()
 	end
 	local kvs = res.kvs
 	sort(kvs, function(a, b)
