@@ -1,7 +1,7 @@
 #!/bin/sh
 cd single
 pkill 'etcd'
-nohup etcd &
+nohup etcd --log-level=debug &
 nohup ./kvrocks &
 export ETCDCTL_API=3
 etcdctl --endpoints=http://127.0.0.1:2379 put /serverlist/1 '{"name":"鸿蒙初开","opentime":"2024-08-01","status":"火爆"}'

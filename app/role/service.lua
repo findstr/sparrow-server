@@ -21,6 +21,7 @@ local serve = cluster.new {
 	marshal = marshal,
 	unmarshal = unmarshal,
 	call = function(body, cmd, fd)
+		print("crouter", cmd, body)
 		return crouter[cmd](body, fd)
 	end,
 	close = function(fd, errno)
@@ -44,9 +45,41 @@ function crouter.forward_r(req, fd)
 	end
 	local ack = fn(req.uid, body, fd)
 	if ack then
-		return {body = json.encode(ack)}
+		return { body = json.encode(ack) }
 	end
 	return nil
+end
+
+local online = require "app.role.online"
+function crouter.multicast_n(req, fd)
+	--TODO:
+	print("multicast_n", req.cmd, req.uids)
+	local gate_users = setmetatable({}, {
+		__index = function(t, k)
+			local v = {}
+			t[k] = v
+			return v
+		end
+	})
+	for _, uid in pairs(req.uids) do
+		local user = online[uid]
+		print("[role] multicast_n uid:", uid, "user:", user)
+		if user then
+			local gatefd = user.gate
+			if gatefd then
+				local list = gate_users[gatefd]
+				list[#list + 1] = uid
+			end
+		end
+	end
+	for gatefd, uids in pairs(gate_users) do
+		print("[role] multicast_n gatefd:", gatefd, "uids:", uids)
+		serve.multicast_n(gatefd, {
+			uids = uids,
+			cmd = req.cmd,
+			body = req.body,
+		})
+	end
 end
 
 return serve

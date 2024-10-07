@@ -9,6 +9,8 @@ local code = require "app.code"
 local role = require "lib.agent.role"
 local json = require "core.json"
 local router = require "lib.router.gateway"
+local crouter = require "lib.router.cluster"
+local clusterp = require "app.proto.cluster"
 
 local pcall = core.pcall
 local format = string.format
@@ -19,18 +21,21 @@ local function respond(sock, cmd, obj)
 		cmd = cmd,
 		body = obj
 	}
-	sock:write(dat)
+	local ok, err = sock:write(dat, "text")
+	print("respond", dat, ok, err)
 end
 
 local function error(sock, cmd, code_num)
-	respond(sock, cmd, {code = code_num})
+	respond(sock, cmd, { code = code_num })
 end
 
-local dbk_uid = setmetatable({}, {__index = function(t, k)
-	local dbk = format("uid:%d", k)
-	t[k] = dbk
-	return dbk
-end})
+local dbk_uid = setmetatable({}, {
+	__index = function(t, k)
+		local dbk = format("uid:%d", k)
+		t[k] = dbk
+		return dbk
+	end
+})
 
 local sock_to_account = {}
 local uid_to_sock = {}
@@ -95,7 +100,7 @@ function router.login_r(sock, cmd, req)
 		logger.error("[gateway] account:", account, "sid", sid, "hget error", uid)
 		return false
 	end
-	if not uid then	-- 没有玩家ID, 尝试分配一个
+	if not uid then -- 没有玩家ID, 尝试分配一个
 		uid = db.newid()
 		local ok, res = db.hsetnx(dbk, account, uid)
 		if not ok then
@@ -151,14 +156,14 @@ function router.servers_r(sock, _, _)
 		return false
 	end
 	local list = serverlist.get()
-	respond(sock, "servers_a", {list = list})
+	respond(sock, "servers_a", { list = list })
 	logger.info("servers_a", json.encode(list))
 	return true
 end
 
 local function process(sock)
 	local dat, typ = sock:read()
-	print("process", dat, typ)
+	print("process", dat, ":", typ)
 	if not typ then
 		return false
 	end
@@ -167,7 +172,7 @@ local function process(sock)
 		return false
 	end
 	if typ == "ping" then
-		sock:write("", "pong")
+		sock:write(dat, "pong")
 		return true
 	end
 	if typ ~= "text" or #dat < 4 then
@@ -238,6 +243,18 @@ local function kick_users(uid_set)
 		if sock then
 			--kick_r
 			sock:close()
+		end
+	end
+end
+
+function crouter.multicast_n(req, fd)
+	local body = clusterp:decode(req.cmd, req.body)
+	print("[gateway] multicast_n", req.uids, req.cmd, body)
+	for _, uid in pairs(req.uids) do
+		local sock = uid_to_sock[uid]
+		print("[gateway] multicast_n uid:", uid, type(sock))
+		if sock then
+			respond(sock, req.cmd, body)
 		end
 	end
 end
