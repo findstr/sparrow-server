@@ -1,17 +1,13 @@
 local logger = require "core.logger"
 local args = require "lib.args"
-local cleanup = require "lib.cleanup"
-local scene = require "lib.agent.scene"
-local service = require "app.role.service"
+local cluster = require "lib.cluster"
 
 require "app.role.userm"
-
-scene.start()
-
-local ok, err = service.listen(args.listen)
-if not ok then
-        logger.error("[role] listen addr:", args.listen, "error:", err)
-        return cleanup()
-end
-
+require "app.role.service"
+cluster.connect("scene", function(name, id, fd)
+        logger.info("scene connect", name, id, fd)
+end)
 logger.info("role start")
+cluster.listen(args.listen, function(name, id, fd)
+        logger.info("role establish to", name, id, fd)
+end)

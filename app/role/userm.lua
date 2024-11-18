@@ -52,16 +52,14 @@ local function load_user(uid)
 end
 
 
-local scene = require "lib.agent.scene"
-local rpc = scene.rpc()
-
+local scene = require "lib.cluster".services.scene
 function router.login_r(uid, req, fd)
 	local handle <close> = login_lock:lock(uid)
 	local user = uid_to_user[uid]
 	if user then
 		local gate_fd = user.gate
 		if gate_fd then
-			local ack = service.kick_r(gate_fd, {
+			local ack = service:call(gate_fd, "kick_r", {
 				uid = uid,
 				code = code.login_others,
 			})
@@ -85,7 +83,7 @@ function router.login_r(uid, req, fd)
 		uid_to_user[uid] = user
 	end
 
-	rpc.scene_enter_r(scene.fd(1), {
+	scene:call(1, "scene_enter_r", {
 		uid = uid,
 		sid = req.server_id,
 	})
@@ -189,9 +187,8 @@ function router.move_r(uid, req, _)
 	logger.error("[role] move_r uid:", uid, "set", data, "err:", ok, n)
 	logger.debug("[role] move_r uid:", uid, "x:", req.x, "z:", req.z)
 	req.uid = uid
-	local fd = scene.fd(1)
-	local ack = rpc.scene_move_r(fd, req)
-	print("call scene", fd, ack, "XXX")
+	local ack = scene:call(1, "scene_move_r", req)
+	print("call scene", ack, "XXX")
 	return ack
 end
 

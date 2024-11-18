@@ -1,38 +1,8 @@
 local json = require "core.json"
 local logger = require "core.logger"
-local cluster = require "core.cluster"
-local callret = require "app.proto.callret"
-local clusterp = require "app.proto.cluster"
 local crouter = require "lib.router.cluster"
 local grouter = require "lib.router.gateway"
-
-local function unmarshal(cmd, buf, sz)
-	return clusterp:decode(cmd, buf, sz)
-end
-
-local function marshal(cmd, body)
-	print("marshal", cmd, body)
-	cmd = clusterp:tag(cmd)
-	return cmd, clusterp:encode(cmd, body)
-end
-
-local serve = cluster.new {
-	callret = callret(clusterp),
-	marshal = marshal,
-	unmarshal = unmarshal,
-	call = function(body, cmd, fd)
-		print("crouter", cmd, body)
-		return crouter[cmd](body, fd)
-	end,
-	close = function(fd, errno)
-	end,
-}
-
-function crouter.hello_r(req)
-	logger.info("[role] hello_r", req.name, req.id)
-	assert(req.name == "gateway", req.name)
-	return {}
-end
+local gateway = require "lib.cluster".services.gateway
 
 function crouter.forward_r(req, fd)
 	local cmd = req.cmd
@@ -74,7 +44,7 @@ function crouter.multicast_n(req, fd)
 	end
 	for gatefd, uids in pairs(gate_users) do
 		print("[role] multicast_n gatefd:", gatefd, "uids:", uids)
-		serve.multicast_n(gatefd, {
+		gateway:call(gatefd, "multicast_n", {
 			uids = uids,
 			cmd = req.cmd,
 			body = req.body,
@@ -82,4 +52,3 @@ function crouter.multicast_n(req, fd)
 	end
 end
 
-return serve

@@ -6,11 +6,11 @@ local db = require "lib.db"
 local cleanup = require "lib.cleanup"
 local serverlist = require "lib.conf.serverlist"
 local code = require "app.code"
-local role = require "lib.agent.role"
 local json = require "core.json"
 local router = require "lib.router.gateway"
 local crouter = require "lib.router.cluster"
 local clusterp = require "app.proto.cluster"
+local role = require "app.gateway.role"
 
 local pcall = core.pcall
 local format = string.format
@@ -139,7 +139,7 @@ function router.login_r(sock, cmd, req)
 	sock_to_uid[sock] = uid
 	local cmd, body = role.forward(uid, cmd, req)
 	if not cmd then
-		logger.error("[gateway] forward role of uid:", uid, "error")
+		logger.error("[gateway] forward role of uid:", uid, "error", body)
 		return false
 	end
 	respond(sock, cmd, body)
