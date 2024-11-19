@@ -1,20 +1,15 @@
 local env = require "core.env"
-local assert = assert
-
-local serviceid = {
-	gateway = 1,
-	role = 2,
-	scene = 3,
-}
-
+local serviceid = require "lib.serviceid"
 local service = assert(env.get("service"), "service")
+
+local assert = assert
 
 local M = {
 	etcd = assert(env.get("etcd"), "etcd"),
 	listen = assert(env.get("listen"), "listen"),
 	service = service,
 	workerid = env.get("workerid"),
-	serviceid = assert(serviceid[service], service),
+	serviceid = assert(serviceid.get(service), service),
 }
 
 return M

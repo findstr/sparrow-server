@@ -72,6 +72,8 @@ function router.scene_move_r(req, _)
 	multicast(players, "scene_move_n", req)
 end
 
-cluster.listen(args.listen, function (name, id, fd)
+cluster.watch_establish(function (name, id, fd)
 	logger.info("[scene] establish:", name, "id:", id, "fd:", fd)
 end)
+
+cluster.listen(args.listen)

@@ -2,6 +2,7 @@ local zproto = require "zproto"
 local logger = require "core.logger"
 local mutex = require "core.sync.mutex"
 local db = require "lib.db"
+local serverid = require "lib.serviceid"
 local router = require "lib.router.gateway"
 local code = require "app.code"
 local service = require "app.role.service"
@@ -52,14 +53,14 @@ local function load_user(uid)
 end
 
 
-local scene = require "lib.cluster".services.scene
+local cluster = require "lib.cluster"
 function router.login_r(uid, req, fd)
 	local handle <close> = login_lock:lock(uid)
 	local user = uid_to_user[uid]
 	if user then
 		local gate_fd = user.gate
 		if gate_fd then
-			local ack = service:call(gate_fd, "kick_r", {
+			local ack = cluster.call(gate_fd, "kick_r", {
 				uid = uid,
 				code = code.login_others,
 			})
@@ -83,7 +84,7 @@ function router.login_r(uid, req, fd)
 		uid_to_user[uid] = user
 	end
 
-	scene:call(1, "scene_enter_r", {
+	cluster.call(serverid.uuid("scene", 1), "scene_enter_r", {
 		uid = uid,
 		sid = req.server_id,
 	})
@@ -187,7 +188,7 @@ function router.move_r(uid, req, _)
 	logger.error("[role] move_r uid:", uid, "set", data, "err:", ok, n)
 	logger.debug("[role] move_r uid:", uid, "x:", req.x, "z:", req.z)
 	req.uid = uid
-	local ack = scene:call(1, "scene_move_r", req)
+	local ack = cluster.call(serverid.uuid("scene", 1), "scene_move_r", req)
 	print("call scene", ack, "XXX")
 	return ack
 end

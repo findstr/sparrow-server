@@ -4,10 +4,9 @@ local cluster = require "lib.cluster"
 
 require "app.role.userm"
 require "app.role.service"
-cluster.connect("scene", function(name, id, fd)
-        logger.info("scene connect", name, id, fd)
+cluster.watch_establish(function(name, id, fd)
+        logger.info("role establish", name, id, fd)
 end)
+cluster.connect("scene")
 logger.info("role start")
-cluster.listen(args.listen, function(name, id, fd)
-        logger.info("role establish to", name, id, fd)
-end)
+cluster.listen(args.listen)

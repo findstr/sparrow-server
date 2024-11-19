@@ -1,6 +1,6 @@
 local json = require "core.json"
+local serviceid = require "lib.serviceid"
 local cluster = require "lib.cluster"
-local role = require "lib.cluster".services.role
 local router = require "lib.router.cluster"
 
 local kick_users
@@ -25,11 +25,13 @@ end
 local M = {}
 local cap
 function M.start(kick)
-	cap = cluster.connect("role", establish).capacity
+	cluster.watch_establish(establish)
+	cluster.connect("role")
+	cap = cluster.capacity["role"]
 end
 
 function M.assign(uid)
-	local id = uid % cap + 1
+	local id = serviceid.uuid("role", uid % cap + 1)
 	fd_uid_set[id][uid] = true
 	uid_to_id[uid] = id
 	return id
@@ -48,7 +50,7 @@ function M.forward(uid, cmd, body)
 	if not id then
 		return nil
 	end
-	local ack = role:call(id, "forward_r", {
+	local ack = cluster.call(id, "forward_r", {
 		uid = uid,
 		cmd = cmd,
 		body = json.encode(body),

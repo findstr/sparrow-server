@@ -2,8 +2,7 @@ local json = require "core.json"
 local logger = require "core.logger"
 local crouter = require "lib.router.cluster"
 local grouter = require "lib.router.gateway"
-local gateway = require "lib.cluster".services.gateway
-
+local cluster = require "lib.cluster"
 function crouter.forward_r(req, fd)
 	local cmd = req.cmd
 	local body = json.decode(req.body)
@@ -44,7 +43,7 @@ function crouter.multicast_n(req, fd)
 	end
 	for gatefd, uids in pairs(gate_users) do
 		print("[role] multicast_n gatefd:", gatefd, "uids:", uids)
-		gateway:call(gatefd, "multicast_n", {
+		cluster.call(gatefd, "multicast_n", {
 			uids = uids,
 			cmd = req.cmd,
 			body = req.body,
