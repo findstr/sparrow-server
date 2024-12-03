@@ -1,10 +1,9 @@
-local core = require "core"
 local etcd = require "core.etcd"
 local logger = require "core.logger"
-local cleanup = require "lib.cleanup"
 local args = require "lib.args"
+local cleanup = require "lib.cleanup"
 local service = require "lib.conf.service"
-local worker = require "lib.conf.worker"
+local node = require "lib.conf.node"
 local serverlist = require "lib.conf.serverlist"
 
 local etcd_client
@@ -27,7 +26,7 @@ function M.start()
 	local lease_id = res.ID
 	serverlist.start(etcd_client)
 	service.start(etcd_client)
-	worker.start(etcd_client, lease_id)
+	node.start(etcd_client, lease_id)
 end
 
 

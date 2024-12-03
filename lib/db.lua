@@ -3,9 +3,8 @@ local dns = require "core.dns"
 local logger = require "core.logger"
 local redis = require "core.db.redis"
 local service = require "lib.conf.service"
-local worker = require "lib.conf.worker"
+local node = require "lib.conf.node"
 local cleanup = require "lib.cleanup"
-
 
 local tonumber = tonumber
 local byte = string.byte
@@ -17,9 +16,9 @@ local db_addr = {}
 
 local db_timer_period <const> = 1000	--ms
 
-local guid_bits<const> = 64
-local workerid_bits<const> = 14
-local workerid_shift<const> = guid_bits - workerid_bits
+local nodeid_max<const> = 90000
+local guid_max<const> = 9000000000000000000
+local nodeid_shift<const> = guid_max // nodeid_max
 
 local dbk_guid<const> = "_guid"
 
@@ -51,12 +50,12 @@ local function db_timer()
 	end
 end
 local function init_guid()
-	local workerid = worker.id
-	if workerid >= (1 << workerid_bits) then
-		logger.error("[lib.db] init_guid workerid:", workerid, "too large")
+	local nodeid = node.selfid()
+	if nodeid >= nodeid_max then
+		logger.error("[lib.db] init_guid workerid:", nodeid, "too large")
 		cleanup()
 	end
-	guid_key = tostring(workerid)
+	guid_key = tostring(nodeid)
 	guid_db = db_pool[dbk_hash[dbk_guid]]
 	local ok, id = guid_db:hget(dbk_guid, guid_key)
 	if not ok then
@@ -64,7 +63,7 @@ local function init_guid()
 		cleanup()
 		return
 	end
-	guid_block_begin = workerid << workerid_shift
+	guid_block_begin = nodeid * nodeid_shift
 	if id then
 		id = tonumber(id)
 		if id <= guid_block_begin then
@@ -103,7 +102,7 @@ local function init_db()
 	end
 	db_cap = conf.capacity
 	if #conf ~= db_cap then
-		logger.error("[libdb] init_db incorrect service instance, cap:",
+		logger.error("[libdb] init_db incorrect db workers, cap:",
 			db_cap, "current:", #conf)
 		return cleanup()
 	end

@@ -1,7 +1,7 @@
 local json = require "core.json"
-local serviceid = require "lib.serviceid"
 local cluster = require "lib.cluster"
-local router = require "lib.router.cluster"
+local node = require "lib.conf.node"
+local router = require "app.router.cluster"
 
 local kick_users
 local uid_to_id = {}
@@ -31,7 +31,7 @@ function M.start(kick)
 end
 
 function M.assign(uid)
-	local id = serviceid.uuid("role", uid % cap + 1)
+	local id = node.id("role", uid % cap + 1)
 	fd_uid_set[id][uid] = true
 	uid_to_id[uid] = id
 	return id

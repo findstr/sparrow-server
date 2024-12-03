@@ -10,6 +10,4 @@
 
 ### 所有服务的workerid->监听端口
 `/service/db/capacity`			数据库实例个数
-`/service/db/instance/${instanceid}`	数据库实例的端口
-
-
+`/service/db/worker/${worker}`		数据库实例的端口(`${worker}为1~${capacity}`)

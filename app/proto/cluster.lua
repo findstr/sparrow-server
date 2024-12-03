@@ -2,8 +2,8 @@ local zproto = require "zproto"
 
 local proto = assert(zproto:parse [[
 hello_r 10000 {
-	.id:uint32 1
-	.name:string 2
+	.service:string 1
+	.workerid:uint32 2
 }
 
 hello_a 10001 {}

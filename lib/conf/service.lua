@@ -1,5 +1,4 @@
 local core = require "core"
-local json = require "core.json"
 local logger = require "core.logger"
 local cleanup = require "lib.cleanup"
 
@@ -46,8 +45,8 @@ local function process_event(event, kv)
 			cleanup()
 			return
 		end
-	elseif typ == "instance" then
-		id = tonumber(id) + 1
+	elseif typ == "worker" then
+		id = tonumber(id)
 		if not id then
 			logger.error("[core.etcd] invalid service instance id:", id)
 			return
@@ -91,6 +90,7 @@ local function watch_modify(etcd, prefix)
 		while true do
 			local stream, err = etcd:watch {
 				key = prefix,
+				prefix = true,
 			}
 			if stream then
 				watch_loop(stream)

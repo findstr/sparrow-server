@@ -1,6 +1,6 @@
 local core = require "core"
 local function cleanup()
-	print("------------")
+	print("------------", debug.traceback())
 	core.exit(0)
 end
 

@@ -1,7 +1,7 @@
 local json = require "core.json"
 local logger = require "core.logger"
-local crouter = require "lib.router.cluster"
-local grouter = require "lib.router.gateway"
+local crouter = require "app.router.cluster"
+local grouter = require "app.router.gateway"
 local cluster = require "lib.cluster"
 function crouter.forward_r(req, fd)
 	local cmd = req.cmd

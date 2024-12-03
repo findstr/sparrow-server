@@ -1,9 +1,8 @@
 local logger = require "core.logger"
 local args = require "lib.args"
 local cluster = require "lib.cluster"
-local router = require "lib.router.cluster"
+local router = require "app.router.cluster"
 local clusterp = require "app.proto.cluster"
-local role = cluster.services.role
 local pairs = pairs
 
 local uid_to_sid = {}
@@ -35,7 +34,7 @@ local function multicast(uid_set, cmd, obj)
 	end
 	local body = clusterp:encode(cmd, obj)
 	for fd, uid_list in pairs(fd_uid_list) do
-		role:call(fd, "multicast_n", {
+		cluster.call(fd, "multicast_n", {
 			uids = uid_list,
 			cmd = cmd,
 			body = body,
@@ -77,3 +76,4 @@ cluster.watch_establish(function (name, id, fd)
 end)
 
 cluster.listen(args.listen)
+cluster.serve(router)
