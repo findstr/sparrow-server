@@ -1,13 +1,10 @@
+local libproto = require "lib.proto"
 local zproto = require "zproto"
-
-local proto = assert(zproto:parse [[
-hello_r 10000 {
-	.service:string 1
-	.workerid:uint32 2
+local proto = assert(zproto:parse([[
+onlines_r 10000 {}
+onlines_a 10001 {
+	.uids:uint64[] 1
 }
-
-hello_a 10001 {}
-
 multicast_n 10002 {
 	.uids:uint64[] 1
 	.cmd:string 2
@@ -78,6 +75,6 @@ scene_move_n 300006 {
 	.z:long 3
 }
 
-]])
+]] .. libproto))
 
 return proto

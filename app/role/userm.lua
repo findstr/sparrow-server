@@ -1,12 +1,15 @@
 local zproto = require "zproto"
+local core = require "core"
 local logger = require "core.logger"
 local mutex = require "core.sync.mutex"
+local waitgroup = require "core.sync.waitgroup"
 local node = require "lib.conf.node"
 local db = require "lib.db"
 local router = require "app.router.gateway"
 local code = require "app.code"
 
 local assert = assert
+local pairs = pairs
 local format = string.format
 local dbk_user <const> = "u:%d"
 local dbk_server_name <const> = "name:%d"
@@ -25,6 +28,8 @@ local dbp = assert(zproto:parse [[
 		.z:long 5
 	}
 ]])
+
+local M = {}
 
 local function load_user(uid)
 	local ok, fields = db.hgetall(format(dbk_user, uid))
@@ -53,13 +58,16 @@ end
 
 
 local cluster = require "lib.cluster"
+function router.logout_r(uid, req, fd)
+	--TODO:
+end
 function router.login_r(uid, req, fd)
 	local handle <close> = login_lock:lock(uid)
 	local user = uid_to_user[uid]
 	if user then
-		local gate_fd = user.gate
-		if gate_fd then
-			local ack = cluster.call(gate_fd, "kick_r", {
+		local gate_id = user.gate
+		if gate_id then
+			local ack = cluster.call(gate_id, "kick_r", {
 				uid = uid,
 				code = code.login_others,
 			})
@@ -192,4 +200,38 @@ function router.move_r(uid, req, _)
 	return ack
 end
 
-return uid_to_user
+local function restore_uids(uids)
+	for _, uid in pairs(uids) do
+		local u = load_user(uid)
+		if u then
+			uid_to_user[uid] = u
+		end
+	end
+end
+
+local function restore_gate(nodeid)
+	local req = {}
+        while true do
+       		local ack = cluster.call(nodeid, "onlines_r", req)
+        	if ack then
+			restore_uids(ack.uids)
+	 		logger.info("role onlines_r node:", nodeid,
+				"uids:", table.concat(ack.uids, ","))
+         		return
+         	end
+         	logger.error("role onlines_r node:", nodeid, "timeout")
+         	core.sleep(1000)
+        end
+end
+
+function M.restore()
+	local group = waitgroup:create()
+	for nodeid in cluster.nodeids("gateway") do
+        	group:fork(function()
+			restore_gate(nodeid)
+        	end)
+	end
+	group:wait()
+end
+
+return M

@@ -6,39 +6,32 @@ local logger = require "core.logger"
 local cluster = require "core.cluster"
 local conf = require "lib.conf.service"
 local node = require "lib.conf.node"
-local callretp = require "app.proto.callret"
-local clusterp = require "app.proto.cluster"
 local ipairs = ipairs
+local assert = assert
 
-local callret = callretp(clusterp)
-local function nop(...) end
-local function unmarshal(typ, cmd, buf, size)
-	if typ == "response" then
-		cmd = callret[cmd]
-	end
-	return clusterp:decode(cmd, buf, size)
-end
 
-local function marshal(typ, cmd, body)
-	if typ == "response" then
-		if not body then
-			return nil, nil
-		end
-		cmd = callret[cmd]
-		if not cmd then
-			return nil, nil, nil
-		end
-	end
-	local cmdn = clusterp:tag(cmd)
-	return cmdn, clusterp:encode(cmd, body, true)
-end
-
+--- @type core.cluster
 local rpc
+local event_addr
 local fd_to_nodeid = {}
 local nodeid_to_fd = {}
 local capacity = {}
-local establish_fn = nop
 local nodeid_to_desc = {}
+
+local function nop(...) end
+local establish_fn = nop
+
+local function dummy_handler(_, nodeid)
+	logger.error("[cluster] nodeid:", nodeid)
+	return {
+		code = code.maintain,
+	}
+end
+local router = setmetatable({}, {
+	__index = function(t, k)
+		return dummy_handler
+	end,
+})
 
 local function close_node(nodeid)
 	local fd = nodeid_to_fd[nodeid]
@@ -60,54 +53,6 @@ local function establish_node(service, workerid, fd)
 	logger.info("[cluster] establish node:", service, workerid, "fd:", fd)
 	establish_fn(service, nodeid, fd)
 end
-
-local event_addr
-local id_hello_r = clusterp:tag("hello_r")
-local function dummy_handler(_, nodeid)
-	logger.error("[cluster] nodeid:", nodeid)
-	return {
-		code = code.maintain,
-	}
-end
-local router = setmetatable({}, {
-	__index = function(t, k)
-		return dummy_handler
-	end,
-})
-
-rpc = cluster.new {
-	marshal = marshal,
-	unmarshal = unmarshal,
-	call = function(body, cmd, fd)
-		if cmd == id_hello_r then	--handshake
-			local service = body.service
-			local workerid = body.workerid
-			logger.info("[cluster]", args.service, "recv hello_r from", service, workerid)
-			establish_node(service, workerid, fd)
-			return body
-		else
-			return router[cmd](body, fd_to_nodeid[fd])
-		end
-	end,
-	accept = function(fd, addr)
-		logger.info("[cluster] accept fd:", fd, "addr:", addr)
-	end,
-	close = function(fd, errno)
-		local nodeid = fd_to_nodeid[fd]
-		local desc = nodeid_to_desc[nodeid]
-		close_node(nodeid)
-		logger.info("[cluster] close fd:", fd, "errno:", errno, desc)
-		if desc then
-			core.fork(function()
-				logger.info("[cluster] reconnect to", desc.name,
-					"workerid:", desc.workerid, "addr:", desc.addr)
-				core.sleep(1000)
-				event_addr(nodeid, desc.addr)
-			end)
-		end
-	end,
-}
-
 
 function event_addr(nodeid, addr)
 	local desc = nodeid_to_desc[nodeid]
@@ -135,6 +80,7 @@ function event_addr(nodeid, addr)
 			event_addr(nodeid, addr)
 		end)
 	else
+		assert(addr)
 		rpc.close(addr)
 		close_node(nodeid)
 	end
@@ -186,6 +132,49 @@ local function add_node_desc(name, workerid, addr)
 	return nodeid, addr
 end
 
+function M.start(marshal, unmarshal)
+ 	local id_hello_r, _ = marshal("request", "hello_r", {})
+
+	rpc = cluster.new {
+		marshal = assert(marshal),
+		unmarshal = assert(unmarshal),
+		call = function(body, cmd, fd)
+			if cmd == id_hello_r then	--handshake
+				local service = body.service
+				local workerid = body.workerid
+				logger.info("[cluster]", args.service,
+					"recv hello_r from", service, workerid)
+				establish_node(service, workerid, fd)
+				return body
+			end
+			local nodeid = fd_to_nodeid[fd]
+			if nodeid then
+				return router[cmd](body, nodeid)
+			end
+			logger.error("[cluster] call cmd:", cmd, "fd:", fd, "error")
+			return nil
+		end,
+		accept = function(fd, addr)
+			logger.info("[cluster] accept fd:", fd, "addr:", addr)
+		end,
+		close = function(fd, errno)
+			local nodeid = fd_to_nodeid[fd]
+			local desc = nodeid_to_desc[nodeid]
+			close_node(nodeid)
+			logger.info("[cluster] close fd:", fd, "errno:", errno, desc)
+			if not desc then
+				return
+			end
+			core.fork(function()
+				logger.info("[cluster] reconnect to", desc.name,
+					"workerid:", desc.workerid, "addr:", desc.addr)
+				core.sleep(1000)
+				event_addr(nodeid, desc.addr)
+			end)
+		end,
+	}
+end
+
 function M.connect(name)
 	logger.info("[cluster] connect to", name)
 	local service_desc = conf.get(name)
@@ -213,6 +202,14 @@ end
 
 function M.serve(router_table)
 	router = router_table
+end
+
+function M.nodeids(name)
+	local service = conf.get(name)
+	if not service then
+		return nil
+	end
+	return node.ids(name, 1, service.capacity)
 end
 
 return M

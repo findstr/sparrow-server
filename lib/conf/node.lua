@@ -11,9 +11,9 @@ local service_shift<const> = 10000			--serviceid as the most significant digit i
 local service_max<const> = 8 * service_shift		--serviceid can't large than '8' in decimal.
 --NOTE: nodeid = serviceid * service_shift + workerid
 local serviceid = {
-	gateway = 0,
-	role = 1,
-	scene = 2,
+	gateway = 1,
+	role = 2,
+	scene = 3,
 }
 do
 	for _, v in pairs(serviceid) do
@@ -69,6 +69,20 @@ function M.id(service, workerid)
 	end
 	local sid = serviceid[service]
 	return sid * service_shift + workerid
+end
+
+local function iter_ids(to, from)
+	if from >= to then
+		return nil
+	end
+	from = from + 1
+	return from
+end
+
+function M.ids(service, from ,to)
+	local from_id = M.id(service, from)
+	local to_id = M.id(service, to)
+	return iter_ids, to_id, from_id - 1, nil
 end
 
 function M.selfid()

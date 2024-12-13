@@ -1,160 +1,23 @@
 local core = require "core"
 local logger = require "core.logger"
 local websocket = require "core.websocket"
+local json = require "core.json"
 local args = require "lib.args"
-local db = require "lib.db"
 local cleanup = require "lib.cleanup"
+local cluster = require "lib.cluster"
 local serverlist = require "lib.conf.serverlist"
 local code = require "app.code"
-local json = require "core.json"
 local router = require "app.router.gateway"
 local crouter = require "app.router.cluster"
-local clusterp = require "app.proto.cluster"
 local role = require "app.gateway.role"
+local auth = require "app.gateway.auth"
+local utils = require "app.gateway.utils"
 
 local pcall = core.pcall
-local format = string.format
-local tonumber = tonumber
-
-local function respond(sock, cmd, obj)
-	local dat = json.encode {
-		cmd = cmd,
-		body = obj
-	}
-	local ok, err = sock:write(dat, "text")
-	print("respond", dat, ok, err)
-end
-
-local function error(sock, cmd, code_num)
-	respond(sock, cmd, { code = code_num })
-end
-
-local dbk_uid = setmetatable({}, {
-	__index = function(t, k)
-		local dbk = format("uid:%d", k)
-		t[k] = dbk
-		return dbk
-	end
-})
-
-local sock_to_account = {}
-local uid_to_sock = {}
-local sock_to_uid = {}
-
-function router.auth_r(sock, _, req)
-	local account = req.account
-	local password = req.password
-	if not account or not password then
-		error(sock, "auth_a", code.args_invalid)
-		logger.error("[gateway] account:", account, password "is invalid")
-		return false
-	end
-	local ok, res = db.hget("account", account)
-	if not ok then
-		error(sock, "auth_a", code.internal_error)
-		logger.error("[gateway] account:", account, "hsetnx error", res)
-		return false
-	else
-		if not res then
-			ok, res = db.hsetnx("account", account, password)
-			if not ok then
-				error(sock, "auth_a", code.internal_error)
-				logger.error("[gateway] account:", account, "hsetnx error", res)
-				return false
-			end
-			if res ~= 1 then
-				error(sock, "auth_a", code.login_race)
-				logger.error("[gateway] account:", account, "hsetnx res", res)
-				return true
-			end
-		elseif res ~= password then
-			error(sock, "auth_a", code.args_invalid)
-			logger.error("[gateway] account:", account, "password:",
-				password, "~=", res, "error")
-			return false
-		end
-	end
-	sock_to_account[sock] = account
-	respond(sock, "auth_a", {})
-	logger.info("[gateway] auth ok account:", account, password)
-	return true
-end
-
-function router.login_r(sock, cmd, req)
-	local account = sock_to_account[sock]
-	if not account then
-		error(sock, "login_a", code.auth_first)
-		logger.error("[gateway] login_r before auth")
-		return false
-	end
-	local sid = req.server_id
-	if not sid then
-		error(sock, "login_a", code.args_invalid)
-		logger.error("[gateway] account:", account, "server_id is nil")
-		return false
-	end
-	local dbk = dbk_uid[sid]
-	local ok, uid = db.hget(dbk, account)
-	if not ok then
-		error(sock, "login_a", code.internal_error)
-		logger.error("[gateway] account:", account, "sid", sid, "hget error", uid)
-		return false
-	end
-	if not uid then -- 没有玩家ID, 尝试分配一个
-		uid = db.newid()
-		local ok, res = db.hsetnx(dbk, account, uid)
-		if not ok then
-			error(sock, "login_a", code.internal_error)
-			logger.error("[gateway] account:", account, "sid", sid, "uid", uid, "hsetnx error", res)
-			return false
-		end
-		if res ~= 1 then
-			error(sock, "login_a", code.login_race)
-			logger.error("[gateway] account:", account, "sid", sid, "uid", uid, "hsetnx res", res)
-			return true
-		end
-	else
-		uid = tonumber(uid)
-	end
-	if not uid then
-		error(sock, "login_a", code.internal_error)
-		logger.error("[gateway] account:", account, "sid", sid, "uid", uid, "not number")
-		return false
-	end
-	local os = uid_to_sock[uid]
-	if os then
-		uid_to_sock[uid] = nil
-		sock_to_uid[os] = nil
-		error(sock, "login_a", code.login_repeat)
-		logger.error("[gateway] account:", account, "sid", sid, "uid", uid, "login repeat")
-		return true
-	end
-	local fd = role.assign(uid)
-	if not fd then
-		error(sock, "login_a", code.internal_error)
-		logger.error("[gateway] assign role of uid:", uid, "error")
-		return false
-	end
-	uid_to_sock[uid] = sock
-	sock_to_uid[sock] = uid
-	local cmd, body = role.forward(uid, cmd, req)
-	if not cmd then
-		logger.error("[gateway] forward role of uid:", uid, "error", body)
-		return false
-	end
-	respond(sock, cmd, body)
-	return true
-end
-
-router.create_r = router.login_r
-
+local respond = utils.respond
+local error = utils.error
+local ackcmd = utils.ackcmd
 function router.servers_r(sock, _, _)
-	local account = sock_to_account[sock]
-	if not account then
-		error(sock, "servers_a", code.auth_first)
-		logger.error("[gateway] login_r before auth")
-		return false
-	end
 	local list = serverlist.get()
 	respond(sock, "servers_a", { list = list })
 	logger.info("servers_a", json.encode(list))
@@ -163,11 +26,8 @@ end
 
 local function process(sock)
 	local dat, typ = sock:read()
-	print("process", dat, ":", typ)
-	if not typ then
-		return false
-	end
-	if typ == "close" then
+	print("process", dat, ":", typ, "$")
+	if not typ or typ == "close" then
 		logger.info("[gateway] closed")
 		return false
 	end
@@ -186,23 +46,20 @@ local function process(sock)
 	end
 	local cmd = msg.cmd
 	local body = msg.body
-	local uid = sock_to_uid[sock]
-	if uid then
-		cmd, body = role.forward(uid, cmd, body)
-		if cmd then
-			respond(sock, cmd, body)
+	if not auth.account(sock) then
+		if cmd ~= "auth_r" then
+			error(sock, ackcmd[cmd], code.auth_required)
+			logger.error("[gateway] auth required")
+			return true
 		end
-	else
-		local fn = router[cmd]
-		if not fn then
-			logger.error("[gateway] invalid cmd", cmd)
-			return false
-		end
-		local ok = fn(sock, cmd, body)
-		if not ok then
-			return false
-		end
+		auth.exec(sock, body)
+		return true
 	end
+	local fn = router[cmd]
+	if fn then
+		return fn(sock, cmd, body)
+	end
+	role.forward(sock, cmd, body)
 	logger.info("[gateway] process cmd:", cmd, "ok")
 	return true
 end
@@ -220,12 +77,8 @@ local function handler(sock)
 		end
 	end
 	logger.info("[app.gateway] close sock:", sock)
-	sock_to_account[sock] = nil
-	local uid = sock_to_uid[sock]
-	if uid then
-		sock_to_uid[sock] = nil
-		uid_to_sock[uid] = nil
-	end
+	auth.close(sock)
+	role.close(sock)
 	sock:close()
 end
 
@@ -236,29 +89,6 @@ local ok = websocket.listen {
 if not ok then
 	cleanup()
 end
-
-local function kick_users(uid_set)
-	for uid in pairs(uid_set) do
-		local sock = uid_to_sock[uid]
-		if sock then
-			--kick_r
-			sock:close()
-		end
-	end
-end
-
-function crouter.multicast_n(req, fd)
-	local body = clusterp:decode(req.cmd, req.body)
-	print("[gateway] multicast_n", req.uids, req.cmd, body)
-	for _, uid in pairs(req.uids) do
-		local sock = uid_to_sock[uid]
-		print("[gateway] multicast_n uid:", uid, type(sock))
-		if sock then
-			respond(sock, req.cmd, body)
-		end
-	end
-end
-
-role.start(kick_users)
-
+role.start()
+cluster.serve(crouter)
 logger.info("gateway start")
