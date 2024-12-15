@@ -46,13 +46,13 @@ local function process(sock)
 	end
 	local cmd = msg.cmd
 	local body = msg.body
-	if not auth.account(sock) then
-		if cmd ~= "auth_r" then
-			error(sock, ackcmd[cmd], code.auth_required)
-			logger.error("[gateway] auth required")
-			return true
-		end
+	if cmd == "auth_r" then
 		auth.exec(sock, body)
+		return true
+	end
+	if not auth.account(sock) then
+		error(sock, ackcmd[cmd], code.auth_required)
+		logger.error("[gateway] auth required")
 		return true
 	end
 	local fn = router[cmd]

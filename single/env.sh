@@ -8,5 +8,6 @@ etcdctl --endpoints=http://127.0.0.1:2379 put /serverlist/1 '{"name":"鸿蒙初�
 etcdctl --endpoints=http://127.0.0.1:2379 put /serverlist/2 '{"name":"盘古开天","opentime":"2025-08-01","status":"火爆"}'
 etcdctl --endpoints=http://127.0.0.1:2379 put /service/db/capacity 1
 etcdctl --endpoints=http://127.0.0.1:2379 put /service/db/worker/1 127.0.0.1:6666
+etcdctl --endpoints=http://127.0.0.1:2379 put /service/gateway/capacity 1
 etcdctl --endpoints=http://127.0.0.1:2379 put /service/role/capacity 1
 etcdctl --endpoints=http://127.0.0.1:2379 put /service/scene/capacity 1

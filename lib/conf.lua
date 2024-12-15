@@ -21,7 +21,7 @@ function M.start()
 	}
 	if not res then
 		logger.error("[conf.workerid] etcd grant failed:", err)
-		cleanup()
+		return cleanup()
 	end
 	local lease_id = res.ID
 	serverlist.start(etcd_client)
