@@ -43,3 +43,4 @@ k8s/volume
 etcdctl
 single/kvrocks
 single/default.etcd
+luaclib/*
