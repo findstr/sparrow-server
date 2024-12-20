@@ -5,7 +5,6 @@ local function respond(sock, cmd, obj)
 		body = obj
 	}
 	local ok, err = sock:write(dat, "text")
-	print("-----------respond", dat, ok, err)
 end
 
 local function error(sock, cmd, code_num)

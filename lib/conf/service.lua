@@ -1,6 +1,6 @@
 local core = require "core"
 local logger = require "core.logger"
-local cleanup = require "lib.cleanup"
+local cleanup = require "lib.cleanup".exec
 
 local M = {}
 

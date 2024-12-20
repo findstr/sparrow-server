@@ -5,6 +5,7 @@ local cleanup = require "lib.cleanup"
 
 local M = {}
 
+local assert = assert
 local tonumber = tonumber
 local sort = table.sort
 local service_shift<const> = 10000			--serviceid as the most significant digit in decimal.
@@ -19,7 +20,7 @@ do
 	for _, v in pairs(serviceid) do
 		if v >= service_max then
 			logger.error("[lib.conf.node] serviceid overflow:", v)
-			cleanup()
+			cleanup.exec()
 		end
 	end
 end
@@ -33,12 +34,12 @@ local function watch_loop(stream)
 		for _, event in ipairs(res.events) do
 			if event.type == "DELETE" then
 				logger.error("[core.etcd] workerid deleted key:", event.kv.key)
-				cleanup()
+				cleanup.exec()
 				return
 			elseif event.kv.value ~= args.listen then
 				logger.error("[core.etcd] workerid changed key:",
 					event.kv.key, "from", args.listen, "to", event.kv.value)
-				cleanup()
+				cleanup.exec()
 				return
 			end
 		end
@@ -47,10 +48,14 @@ end
 
 local function watch_self(etcd, key)
 	return function()
+		assert(M.workerid)
 		while true do
 			local stream, err = etcd:watch {
 				key = key,
 			}
+			if not M.workerid then	--worker已经关闭了
+				return
+			end
 			if stream then
 				watch_loop(stream)
 				stream:close()
@@ -65,7 +70,7 @@ end
 function M.id(service, workerid)
 	if workerid >= service_shift then
 		logger.error("[lib.conf.node] worker_id overflow:", workerid)
-		cleanup()
+		cleanup.exec()
 	end
 	local sid = serviceid[service]
 	return sid * service_shift + workerid
@@ -104,7 +109,7 @@ function M.start(etcd, lease_id)
 		}
 		if not res then
 			logger.error("[lib.conf.node] etcd put service failed:", err)
-			return cleanup()
+			return cleanup.exec()
 		end
 		M.workerid = workerid
 		logger.info("[lib.conf.node] service:", service, "workerid:", workerid)
@@ -114,7 +119,7 @@ function M.start(etcd, lease_id)
 	local res, err = etcd:lock(lease_id, lock_prefix, uuid)
 	if not res then
 		logger.error("[lib.conf.node] lock fail:", err)
-		cleanup()
+		cleanup.exec()
 	end
 	local service_prefix = "/service/" .. args.service .. "/worker"
 	res, err = etcd:get {
@@ -123,21 +128,15 @@ function M.start(etcd, lease_id)
 	}
 	if not res then
 		logger.error("[lib.conf.node] etcd get service failed:", err)
-		cleanup()
+		cleanup.exec()
 	end
 	local kvs = res.kvs
 	sort(kvs, function(a, b)
 		return a.key < b.key
 	end)
-	local findself = false
 	workerid = 1
 	for _, kv in ipairs(kvs) do
 		local id = tonumber(kv.key:match("(%d+)$"))
-		if kv.value == uuid then
-			findself = true
-			workerid = id
-			break
-		end
 		if id == workerid then
 			workerid = id + 1
 		else
@@ -154,9 +153,24 @@ function M.start(etcd, lease_id)
 	etcd:unlock(lock_prefix, uuid)
 	if not res or (res.prev_kv and res.prev_kv.value ~= uuid) then
 		logger.error("[lib.conf.node] etcd put service failed:", err, "prev_kv:", res and res.prev_kv)
-		cleanup()
+		cleanup.exec()
 	end
 	M.workerid = workerid
+	cleanup.atexit(function()
+		local workerid = M.workerid
+		if not workerid then
+			return
+		end
+		M.workerid = nil
+		local res, err = etcd:delete {
+			key = service_key,
+			prev_kv = true,
+		}
+		if not res then
+			logger.error("[lib.conf.node] etcd delete service failed:", err)
+		end
+		logger.info("[lib.conf.node] service:", service, "cleanup workerid:", workerid)
+	end)
 	core.fork(watch_self(etcd, service_key))
 	logger.info("[lib.conf.node] service:", service, "workerid:", workerid)
 end

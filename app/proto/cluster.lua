@@ -36,44 +36,60 @@ kick_a 20004 {
 	.code:uint32 1
 }
 
-scene_player {
+###########scene
+
+scene_entity {
+	.eid:int32 1		#小兵ID
+	.etype:int32 2		#小兵兵种
+	.uid:uint64 3		#玩家ID
+	.lid:uint64 4		#玩家联盟ID
+	.x:float 5		#坐标， 小兵当前坐标
+	.z:float 6		#坐标， 小兵当前坐标
+	.lifttime:uint32 7 	#小兵生命周期
+}
+
+scene_attack {
+	.atk:int32 1	#攻击者小兵
+	.def:int32 2	#被攻击者小兵
+	.hurt:int32 3	#伤害值
+	.defhp:int32 4	#被攻击者剩余血量
+}
+
+scene_watch_r 300000 {
 	.uid:uint64 1
-	.x:long 2
-	.z:long 3
+	.x:float 2
+	.z:float 3
 }
 
-scene_enter_r 300000 {
-	.uid:uint64 1
-	.sid:uint64 2
-	.x:long 3
-	.z:long 4
+scene_watch_a 300001 {
+	.entities:scene_entity[] 2
 }
 
-scene_enter_a 300001 {
-	.players:scene_player[] 2
-}
-
-scene_leave_r 300002 {
+scene_unwatch_r 300002 {
 	.uid:uint64 1
 }
 
-scene_leave_a 300003 {}
-
-scene_move_r 300004 {
-	.uid:uint64 1
-	.x:long 2
-	.z:long 3
+scene_unwatch_a 300003 {
 }
 
-scene_move_a 300005 {
-	.players:scene_player[] 2
+scene_action_n 300004 {
+	.nowms:uint64 1
+	.entities:scene_entity[] 2
+	.attacks:scene_attack[] 3
 }
 
-scene_move_n 300006 {
-	.uid:uint64 1
-	.x:long 2
-	.z:long 3
+scene_put_r 300005 {
+	.uid:uint64 1	#玩家ID
+	.lid:uint64 2	#玩家联盟ID
+	.etype:int32 3	#小兵兵种
+	.x:float 4	#坐标
+	.z:float 5	#坐标
 }
+
+scene_put_a 300006 { 	#放置小兵不需要主动返回, scene_action_n推送
+	.code:uint32 1	#错误码
+}
+
 
 ]] .. libproto))
 

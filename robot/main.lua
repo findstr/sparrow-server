@@ -5,4 +5,5 @@ logger.error = function(...)
 	err(...)
 end
 
-dofile("robot/testlogin.lua")
+--dofile("robot/testlogin.lua")
+dofile("robot/testscene.lua")

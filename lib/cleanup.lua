@@ -1,9 +1,21 @@
 local core = require "core"
+local assert = assert
+local finalizers = {}
 local function cleanup()
-	print("------------", debug.traceback())
+	for i = #finalizers, 1, -1 do
+		finalizers[i]()
+	end
+	print("cleanup:", debug.traceback())
 	core.exit(0)
 end
 
 core.signal("SIGINT", cleanup)
 
-return cleanup
+local M = {
+	exec = cleanup,
+	atexit = function(f)
+		assert(f)
+		finalizers[#finalizers + 1] = f
+	end
+}
+return M

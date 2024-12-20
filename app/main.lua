@@ -42,7 +42,6 @@ local function marshal(typ, cmd, body)
 		end
 	end
 	local cmdn = clusterp:tag(cmd)
-	print("marshal", typ, cmd, body, cmdn)
 	return cmdn, clusterp:encode(cmd, body, true)
 end
 

@@ -83,7 +83,7 @@ static inline float entity_match_radius(const struct entity *e)
 {
 	switch (e->type) {
 	case ENTITY_SOLDIER:
-		return 1.f;
+		return 3.f;
 	case ENTITY_TOWER:
 		return 2.f;
 	default:
@@ -202,8 +202,10 @@ static void sync_entity(lua_State *L, struct upctx ctx, int eid,
 		lua_createtable(L, 0, 7);
 		lua_pushvalue(L, -1);
 		lua_seti(L, ctx.stk_entities, eid);
+		set_int(L, t, "eid", eid);
 		set_int(L, t, "uid", e->uid);
 		set_int(L, t, "lid", e->lid);
+		set_int(L, t, "etype", e->type);
 	}
 	if (e->target >= 0) {
 		set_int(L, t, "target", e->target);

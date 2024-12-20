@@ -1,13 +1,14 @@
 local json = require "core.json"
 local logger = require "core.logger"
 local cluster = require "lib.cluster"
-local cleanup = require "lib.cleanup"
+local cleanup = require "lib.cleanup".exec
 local db = require "lib.db"
 local node = require "lib.conf.node"
 local code = require "app.code"
 local auth = require "app.gateway.auth"
 local utils = require "app.gateway.utils"
 local proto = require "app.proto.cluster"
+local callret = require "app.proto.callret"
 local crouter = require "app.router.cluster"
 local grouter = require "app.router.gateway"
 
@@ -98,6 +99,7 @@ local function forward(sock, cmd, body)
 		cmd = cmd,
 		body = json.encode(body),
 	})
+	print("--------forward cmd", cmd, ack, ack and ack.cmd)
 	if not ack then
 		return nil
 	end
@@ -107,7 +109,8 @@ local function forward(sock, cmd, body)
 	else
 		body = {}
 	end
-	respond(sock, cmd, body)
+	local ret_cmd = string.gsub(cmd, "_r$", "_a")
+	respond(sock, ret_cmd, body)
 	return body
 end
 

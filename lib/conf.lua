@@ -1,7 +1,7 @@
 local etcd = require "core.etcd"
 local logger = require "core.logger"
 local args = require "lib.args"
-local cleanup = require "lib.cleanup"
+local cleanup = require "lib.cleanup".clean
 local service = require "lib.conf.service"
 local node = require "lib.conf.node"
 local serverlist = require "lib.conf.serverlist"

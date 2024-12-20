@@ -3,7 +3,6 @@ local core = require "core"
 local logger = require "core.logger"
 local mutex = require "core.sync.mutex"
 local waitgroup = require "core.sync.waitgroup"
-local node = require "lib.conf.node"
 local db = require "lib.db"
 local router = require "app.router.gateway"
 local code = require "app.code"
@@ -90,12 +89,6 @@ function router.login_r(uid, req, fd)
 		user.gate = fd
 		uid_to_user[uid] = user
 	end
-
-	cluster.call(node.id("scene", 1), "scene_enter_r", {
-		uid = uid,
-		sid = req.server_id,
-	})
-
 	local base = user.base
 	return {
 		uid = uid,
@@ -175,29 +168,6 @@ function router.create_r(uid, req, fd)
 		x = 0,
 		z = 0,
 	}
-end
-
-function router.move_r(uid, req, _)
-	local u = uid_to_user[uid]
-	if not u then
-		logger.error("[role] move_r uid:", uid, "not exist")
-		return {
-			code = code.user_not_exist,
-		}
-	end
-	--TODO check move delta
-	local base = u.base
-	base.x = req.x
-	base.z = req.z
-	--TODO: use dbq
-	local data = dbp:encode("base", base)
-	local ok, n = db.hset(format(dbk_user, uid), "base", data)
-	logger.error("[role] move_r uid:", uid, "set", data, "err:", ok, n)
-	logger.debug("[role] move_r uid:", uid, "x:", req.x, "z:", req.z)
-	req.uid = uid
-	local ack = cluster.call(node.id("scene", 1), "scene_move_r", req)
-	print("call scene", ack, "XXX")
-	return ack
 end
 
 local function restore_uids(uids)

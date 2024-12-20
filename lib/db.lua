@@ -4,7 +4,7 @@ local logger = require "core.logger"
 local redis = require "core.db.redis"
 local service = require "lib.conf.service"
 local node = require "lib.conf.node"
-local cleanup = require "lib.cleanup"
+local cleanup = require "lib.cleanup".exec
 
 local tonumber = tonumber
 local byte = string.byte

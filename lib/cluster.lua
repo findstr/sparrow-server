@@ -1,6 +1,7 @@
 local core = require "core"
+local mutex = require "core.sync.mutex"
 local code = require "lib.code"
-local cleanup = require "lib.cleanup"
+local cleanup = require "lib.cleanup".exec
 local args = require "lib.args"
 local logger = require "core.logger"
 local cluster = require "core.cluster"
@@ -13,6 +14,7 @@ local assert = assert
 --- @type core.cluster
 local rpc
 local event_addr
+local connect_lock = mutex:new()
 local fd_to_nodeid = {}
 local nodeid_to_fd = {}
 local capacity = {}
@@ -42,47 +44,55 @@ local function close_node(nodeid)
 	end
 end
 
-local function establish_node(service, workerid, fd)
-	local nodeid = node.id(service, workerid)
-	if nodeid_to_fd[nodeid] == fd then
+local function establish_node(desc, fd)
+	if desc.changed then
+		rpc.close(fd)
+		logger.warn("[cluster] establish node:", desc.service,
+			desc.workerid, "fd:", fd, "changed")
+		return
+	end
+	local nodeid = desc.nodeid
+	if nodeid_to_fd[desc.nodeid] == fd then
 		return
 	end
 	close_node(nodeid)
 	nodeid_to_fd[nodeid] = fd
 	fd_to_nodeid[fd] = nodeid
-	logger.info("[cluster] establish node:", service, workerid, "fd:", fd)
-	establish_fn(service, nodeid, fd)
+	logger.info("[cluster] establish node:", desc.service, desc.workerid, "fd:", fd)
+	establish_fn(desc.service, nodeid, fd)
 end
 
-function event_addr(nodeid, addr)
-	local desc = nodeid_to_desc[nodeid]
-	if desc then
-		local name = desc.name
-		local addr = desc.addr
-		local workerid = desc.workerid
-		logger.debug("[cluster] event addr service:", name,
-			"workerid:", workerid, "addr:", addr)
-		local fd = rpc.connect(addr)
-		if fd then
-			local ack = rpc.call(fd, "hello_r", {
-				service = args.service,
-				workerid = node.workerid,
-			})
-			if ack then
-				establish_node(name, workerid, fd)
-				logger.info("[cluster] connect to", name, "workerid:", workerid, "addr:", addr, "success")
-				return
-			end
-		end
+function event_addr(desc)
+	local handle<close> = connect_lock:lock(desc)
+	if desc.changed then --if addr changed, close the old fd first
+		desc.changed = nil
+		close_node(desc.nodeid)
+	end
+	if not desc.addr then	--if has no addr, there is no need to connect
+		return
+	end
+	local name = desc.name
+	local addr = desc.addr
+	local workerid = desc.workerid
+	logger.debug("[cluster] event addr service:", name,
+		"workerid:", workerid, "addr:", addr)
+	local fd, err = rpc.connect(addr)
+	if not fd then
+		logger.error("[cluster] connect to", name, "workerid:", workerid, "addr:", addr, "error:", err)
 		core.fork(function()
 			core.sleep(1000)
-			logger.error("[role] connect to", name, "nodeid:", workerid, "addr:", addr, "fail, retry")
-			event_addr(nodeid, addr)
+			logger.error("[cluster] reconnect to", name, "workerid:", workerid, "addr:", addr)
+			event_addr(desc)
 		end)
-	else
-		assert(addr)
-		rpc.close(addr)
-		close_node(nodeid)
+		return
+	end
+	local ack = rpc.call(fd, "hello_r", {
+		service = args.service,
+		workerid = node.workerid,
+	})
+	if ack then
+		establish_node(desc, fd)
+		logger.info("[cluster] connect to", name, "workerid:", workerid, "addr:", addr, "success")
 	end
 end
 
@@ -114,22 +124,31 @@ end
 
 local function add_node_desc(name, workerid, addr)
 	local nodeid = node.id(name, workerid)
-	if addr then
-		nodeid_to_desc[nodeid] = {
+	local desc = nodeid_to_desc[nodeid]
+	if not desc then
+		desc = {
 			name = name,
-			addr = addr,
 			workerid = workerid,
+			nodeid = nodeid,
+			addr = nil,
+			changed = nil,
 		}
-		logger.info("[cluster] add node desc:", name, workerid, addr)
+		nodeid_to_desc[nodeid] = desc
+	end
+	if addr then
+		if desc.addr ~= addr then
+			desc.addr = addr
+			desc.changed = true
+		end
+		nodeid_to_desc[nodeid] = desc
 	else
-		local desc = nodeid_to_desc[nodeid]
-		if desc then
-			addr = desc.addr
+		if desc.addr ~= nil then
+			desc.addr = nil
+			desc.changed = true
 		end
 		nodeid_to_desc[nodeid] = nil
-		logger.info("[cluster] del node desc:", name, workerid)
 	end
-	return nodeid, addr
+	return desc
 end
 
 function M.start(marshal, unmarshal)
@@ -144,12 +163,19 @@ function M.start(marshal, unmarshal)
 				local workerid = body.workerid
 				logger.info("[cluster]", args.service,
 					"recv hello_r from", service, workerid)
-				establish_node(service, workerid, fd)
+				local desc = {
+					service = service,
+					workerid = workerid,
+					nodeid = node.id(service, workerid),
+				}
+				establish_node(desc, fd)
 				return body
 			end
 			local nodeid = fd_to_nodeid[fd]
 			if nodeid then
-				return router[cmd](body, nodeid)
+				local ack = router[cmd](body, nodeid)
+				--logger.debug("[cluster] call cmd:", cmd, "fd:", fd, "req", body, "ack:", ack)
+				return ack
 			end
 			logger.error("[cluster] call cmd:", cmd, "fd:", fd, "error")
 			return nil
@@ -159,8 +185,8 @@ function M.start(marshal, unmarshal)
 		end,
 		close = function(fd, errno)
 			local nodeid = fd_to_nodeid[fd]
-			local desc = nodeid_to_desc[nodeid]
 			close_node(nodeid)
+			local desc = nodeid_to_desc[nodeid]
 			logger.info("[cluster] close fd:", fd, "errno:", errno, desc)
 			if not desc then
 				return
@@ -169,7 +195,7 @@ function M.start(marshal, unmarshal)
 				logger.info("[cluster] reconnect to", desc.name,
 					"workerid:", desc.workerid, "addr:", desc.addr)
 				core.sleep(1000)
-				event_addr(nodeid, desc.addr)
+				event_addr(desc)
 			end)
 		end,
 	}

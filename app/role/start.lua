@@ -6,6 +6,7 @@ local cluster = require "lib.cluster"
 local userm = require "app.role.userm"
 
 require "app.role.service"
+require "app.role.scene"
 
 logger.info("role start")
 
